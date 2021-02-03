@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+# （输出维度，卷积核大小，是否池化）
 layer_configs = [
     # Unit1 (2)
     (32, 3, True),
@@ -30,6 +31,7 @@ layer_configs = [
     (1024, 3, False),
 ]
 
+# 设置权重
 def load_conv_bn(buf, start, conv_model, bn_model):
     num_w = conv_model.weight.numel()
 
@@ -48,15 +50,22 @@ def load_conv_bn(buf, start, conv_model, bn_model):
     start = start + num_w
 
     return start
+
+
+# 卷积模块
+# 相当于一层卷积层的模板
+# 输入、输出、卷积核、是否池化自己定
 class conv_block(nn.Module):
 
     def __init__(self, inplane, outplane, kernel_size, pool, stride=1):
         super(conv_block, self).__init__()
-
+        # 卷积层
         pad = 1 if kernel_size == 3 else 0
         self.conv = nn.Conv2d(inplane, outplane, kernel_size, stride=stride, padding=pad, bias=False)
+        # 正则化层
         self.bn = nn.BatchNorm2d(outplane)
         self.act = nn.LeakyReLU(0.1)
+        # 是否池化
         self.pool = pool  # MaxPool2d(2,stride = 2)
 
     def forward(self, x):
@@ -65,11 +74,12 @@ class conv_block(nn.Module):
         out = self.act(out)
 
         if self.pool:
+            # yolo中核大小=2，步长=2
             out = F.max_pool2d(out, kernel_size=2, stride=2)
 
         return out
 
-
+# darknet最后的输出是1024
 class darknet_19(nn.Module):
 
     def __init__(self, cls_num=1000):
@@ -77,6 +87,9 @@ class darknet_19(nn.Module):
         self.class_num = cls_num
         self.feature = self.make_layers(3, layer_configs)
 
+    # 通过配置文件来设置模型每一层
+    # 开始输入是3维度的
+    # 返回一个1024序列
     def make_layers(self, inplane, cfg):
         layers = []
 
@@ -84,6 +97,7 @@ class darknet_19(nn.Module):
             layers.append(conv_block(inplane, outplane, kernel_size, pool))
             inplane = outplane
 
+        # *号表示将数组拆解成独立的个体
         return nn.Sequential(*layers)
 
     def load_weight(self, weight_file):
@@ -95,6 +109,7 @@ class darknet_19(nn.Module):
         buf = np.fromfile(fp, dtype=np.float32)
 
         start = 0
+        # 枚举
         for idx, m in enumerate(self.feature.modules()):
             if isinstance(m, nn.Conv2d):
                 conv = m

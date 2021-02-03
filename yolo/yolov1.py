@@ -24,11 +24,14 @@ def create_yolov1(cfg):
 
     return model
 
-
+# 迭代每一层，如果为conv2d卷积层的话
+# 设置偏置为0
 def fill_fc_weights(layers):
     for m in layers.modules():
         if isinstance(m, nn.Conv2d):
             if m.bias is not None:
+                # Fills the input Tensor with the value
+                # bias也是个tensor
                 nn.init.constant_(m.bias, 0)
 
 class YOLO(nn.Module):
@@ -44,6 +47,8 @@ class YOLO(nn.Module):
 
         self.cls_num = cls_num
         self.conv_mode = conv_mode
+        # darnet作为骨干网络
+        # 加入预训练的权重
         self.backbone = darknet_19()
         if pretrained is not None:
             self.backbone.load_weight(pretrained)
@@ -53,6 +58,8 @@ class YOLO(nn.Module):
         self.bbox_num = bbox_num
         self.last_output = (5 * self.bbox_num + self.cls_num)
 
+        # 顺序容器
+        # conv_block和darknet_19这两个类前面都申明了
         self.local_layer = nn.Sequential()
         self.local_layer.add_module('block_1', conv_block(1024, 1024, 3, False, 2))
         self.local_layer.add_module('block_2', conv_block(1024, 1024, 3, False, 1))
@@ -101,13 +108,17 @@ class YOLO(nn.Module):
 
 
     def forward(self, x, target=None,conf=0.02, nms_threshold=0.5):
+        # 把张量x的形状取出来
         B, c, h, w = x.shape
         device = x.get_device()
         img_size = (w,h)
+        # 把数据通过darknet和顺序容器
         output = self.backbone(x)
         output = self.local_layer(output)
+        # ceil细胞
         B,_,ceil_h,ceil_w = output.shape
         ceil = (ceil_w,ceil_h)
+        # 锚
         anchor_xy = self.gen_anchor(ceil)
         anchor_xy = anchor_xy.repeat(B, self.bbox_num, 1, 1, 1).to(device)
         if self.conv_mode:
@@ -148,8 +159,6 @@ if __name__ == '__main__':
     from data.datasets import VOCDatasets
 
     net = YOLO(20,conv_mode=True).cuda()
-
-
 
     input = torch.zeros(1, 3, 448, 448).cuda()
     dataset = VOCDatasets('./train.txt',train=False)
